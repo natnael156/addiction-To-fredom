@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import clientPromise from '@/lib/mongodb';
+import { getClientPromise } from '@/lib/mongodb';
 import type { SiteContent } from '@/types/admin';
 import { DEFAULT_CONTENT } from '@/utils/defaultContent';
 
@@ -9,7 +9,7 @@ const DOC_ID = 'main';
 
 export default async function handler(_req: NextApiRequest, res: NextApiResponse<SiteContent>) {
   try {
-    const client = await clientPromise;
+    const client = await getClientPromise();
     const doc = await client.db(DB).collection(COLLECTION).findOne({ _id: DOC_ID as any });
     if (doc) {
       const { _id, ...content } = doc;
@@ -17,7 +17,7 @@ export default async function handler(_req: NextApiRequest, res: NextApiResponse
       return res.status(200).json(content as unknown as SiteContent);
     }
   } catch {
-    // fall through to default
+    // fall through to defaults if DB not configured yet
   }
   return res.status(200).json(DEFAULT_CONTENT);
 }

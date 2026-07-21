@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import clientPromise from '@/lib/mongodb';
+import { getClientPromise } from '@/lib/mongodb';
 import type { SiteContent } from '@/types/admin';
 import { DEFAULT_CONTENT } from '@/utils/defaultContent';
 
@@ -8,19 +8,15 @@ const COLLECTION = 'siteContent';
 const DOC_ID = 'main';
 
 async function readContent(): Promise<SiteContent> {
-  try {
-    const client = await clientPromise;
-    const doc = await client.db(DB).collection(COLLECTION).findOne({ _id: DOC_ID as any });
-    if (!doc) return DEFAULT_CONTENT;
-    const { _id, ...content } = doc;
-    return content as unknown as SiteContent;
-  } catch {
-    return DEFAULT_CONTENT;
-  }
+  const client = await getClientPromise();
+  const doc = await client.db(DB).collection(COLLECTION).findOne({ _id: DOC_ID as any });
+  if (!doc) return DEFAULT_CONTENT;
+  const { _id, ...content } = doc;
+  return content as unknown as SiteContent;
 }
 
 async function writeContent(content: SiteContent): Promise<void> {
-  const client = await clientPromise;
+  const client = await getClientPromise();
   await client
     .db(DB)
     .collection(COLLECTION)
@@ -40,8 +36,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (req.method === 'GET') {
-    const content = await readContent();
-    return res.status(200).json(content);
+    try {
+      const content = await readContent();
+      return res.status(200).json(content);
+    } catch (err: any) {
+      console.error('[GET /api/admin/content]', err?.message);
+      return res.status(500).json({ error: err?.message || 'Failed to read content' });
+    }
   }
 
   if (req.method === 'POST') {
@@ -49,9 +50,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const body = req.body as SiteContent;
       await writeContent(body);
       return res.status(200).json({ success: true });
-    } catch (err) {
-      console.error('Failed to save content:', err);
-      return res.status(500).json({ error: 'Failed to save content' });
+    } catch (err: any) {
+      console.error('[POST /api/admin/content]', err?.message);
+      return res.status(500).json({ error: err?.message || 'Failed to save content' });
     }
   }
 
