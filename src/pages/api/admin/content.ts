@@ -1,38 +1,34 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import fs from 'fs';
-import path from 'path';
+import { put, head, getDownloadUrl } from '@vercel/blob';
 import type { SiteContent } from '@/types/admin';
 import { DEFAULT_CONTENT } from '@/utils/defaultContent';
 
-const CONTENT_FILE = path.join(process.cwd(), 'data', 'content.json');
+const BLOB_KEY = 'site-content.json';
 
-function ensureDataDir() {
-  const dir = path.dirname(CONTENT_FILE);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-}
-
-function readContent(): SiteContent {
+async function readContent(): Promise<SiteContent> {
   try {
-    ensureDataDir();
-    if (!fs.existsSync(CONTENT_FILE)) {
-      return DEFAULT_CONTENT;
-    }
-    const raw = fs.readFileSync(CONTENT_FILE, 'utf-8');
-    return JSON.parse(raw) as SiteContent;
+    // Check if the blob exists
+    const blob = await head(BLOB_KEY).catch(() => null);
+    if (!blob) return DEFAULT_CONTENT;
+
+    const res = await fetch(blob.url);
+    if (!res.ok) return DEFAULT_CONTENT;
+    return (await res.json()) as SiteContent;
   } catch {
     return DEFAULT_CONTENT;
   }
 }
 
-function writeContent(content: SiteContent): void {
-  ensureDataDir();
-  fs.writeFileSync(CONTENT_FILE, JSON.stringify(content, null, 2), 'utf-8');
+async function writeContent(content: SiteContent): Promise<void> {
+  const json = JSON.stringify(content);
+  await put(BLOB_KEY, json, {
+    access: 'public',
+    contentType: 'application/json',
+    addRandomSuffix: false,
+  });
 }
 
-export default function handler(req: NextApiRequest, res: NextApiResponse) {
-  // Simple auth check via secret header
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const adminSecret = process.env.ADMIN_SECRET || 'admin1234';
   const authHeader = req.headers['x-admin-secret'];
 
@@ -41,16 +37,17 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   }
 
   if (req.method === 'GET') {
-    const content = readContent();
+    const content = await readContent();
     return res.status(200).json(content);
   }
 
   if (req.method === 'POST') {
     try {
       const body = req.body as SiteContent;
-      writeContent(body);
+      await writeContent(body);
       return res.status(200).json({ success: true });
     } catch (err) {
+      console.error('Failed to save content:', err);
       return res.status(500).json({ error: 'Failed to save content' });
     }
   }
@@ -58,7 +55,6 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   return res.status(405).json({ error: 'Method not allowed' });
 }
 
-// Increase body size limit for base64 images
 export const config = {
   api: {
     bodyParser: {
