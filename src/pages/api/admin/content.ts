@@ -1,31 +1,34 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { put, head, getDownloadUrl } from '@vercel/blob';
+import clientPromise from '@/lib/mongodb';
 import type { SiteContent } from '@/types/admin';
 import { DEFAULT_CONTENT } from '@/utils/defaultContent';
 
-const BLOB_KEY = 'site-content.json';
+const DB = 'a2f';
+const COLLECTION = 'siteContent';
+const DOC_ID = 'main';
 
 async function readContent(): Promise<SiteContent> {
   try {
-    // Check if the blob exists
-    const blob = await head(BLOB_KEY).catch(() => null);
-    if (!blob) return DEFAULT_CONTENT;
-
-    const res = await fetch(blob.url);
-    if (!res.ok) return DEFAULT_CONTENT;
-    return (await res.json()) as SiteContent;
+    const client = await clientPromise;
+    const doc = await client.db(DB).collection(COLLECTION).findOne({ _id: DOC_ID as any });
+    if (!doc) return DEFAULT_CONTENT;
+    const { _id, ...content } = doc;
+    return content as unknown as SiteContent;
   } catch {
     return DEFAULT_CONTENT;
   }
 }
 
 async function writeContent(content: SiteContent): Promise<void> {
-  const json = JSON.stringify(content);
-  await put(BLOB_KEY, json, {
-    access: 'public',
-    contentType: 'application/json',
-    addRandomSuffix: false,
-  });
+  const client = await clientPromise;
+  await client
+    .db(DB)
+    .collection(COLLECTION)
+    .updateOne(
+      { _id: DOC_ID as any },
+      { $set: { ...content } },
+      { upsert: true }
+    );
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
