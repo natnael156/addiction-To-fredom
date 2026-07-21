@@ -15,7 +15,7 @@ const Home: NextPage = () => {
   return (
     <>
       <Head>
-        <title>{SITE_NAME} — You have tried to stop. This time is different.</title>
+        <title>AddictionToFreedom</title>
         <meta name="description" content={DESCRIPTION} />
         <meta name="robots" content="index, follow" />
         <link rel="canonical" href={SITE_URL} />

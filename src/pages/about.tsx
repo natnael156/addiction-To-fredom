@@ -8,7 +8,7 @@ const About: NextPage = () => {
   return (
     <>
       <Head>
-        <title>About Us — AddictionToFreedom</title>
+        <title>About — AddictionToFreedom</title>
         <meta
           name="description"
           content="Our mission is to help individuals overcome compulsive habits through compassionate, evidence-based recovery coaching."
