@@ -6,6 +6,19 @@ import { DEFAULT_CONTENT } from '@/utils/defaultContent';
 const DB = 'a2f';
 const COLLECTION = 'siteContent';
 const DOC_ID = 'main';
+const SETTINGS_COLLECTION = 'adminSettings';
+const SETTINGS_DOC_ID = 'settings';
+
+async function getStoredPassword(): Promise<string> {
+  try {
+    const client = await getClientPromise();
+    const doc = await client.db(DB).collection(SETTINGS_COLLECTION).findOne({ _id: SETTINGS_DOC_ID as any });
+    if (doc?.adminPassword) return doc.adminPassword as string;
+  } catch {
+    // fall through
+  }
+  return process.env.ADMIN_SECRET || 'admin1234';
+}
 
 async function readContent(): Promise<SiteContent> {
   const client = await getClientPromise();
@@ -28,11 +41,18 @@ async function writeContent(content: SiteContent): Promise<void> {
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const adminSecret = process.env.ADMIN_SECRET || 'admin1234';
   const authHeader = req.headers['x-admin-secret'];
-
-  if (authHeader !== adminSecret) {
+  if (!authHeader) {
     return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    const stored = await getStoredPassword();
+    if (authHeader !== stored) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Auth error' });
   }
 
   if (req.method === 'GET') {

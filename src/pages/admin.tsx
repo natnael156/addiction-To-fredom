@@ -6,6 +6,9 @@ import { DEFAULT_CONTENT } from '@/utils/defaultContent';
 
 const ADMIN_SECRET = process.env.NEXT_PUBLIC_ADMIN_SECRET || 'admin1234';
 
+// Store password in memory after successful login
+let sessionPassword = '';
+
 // ─── Shared UI ───────────────────────────────────────────────────────────────
 
 function Label({ children }: { children: React.ReactNode }) {
@@ -80,19 +83,34 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 // ─── Login Screen ─────────────────────────────────────────────────────────────
 
-function LoginScreen({ onLogin }: { onLogin: () => void }) {
+function LoginScreen({ onLogin }: { onLogin: (pwd: string) => void }) {
   const [password, setPassword] = useState('');
   const [show, setShow] = useState(false);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (password === ADMIN_SECRET) {
-      sessionStorage.setItem('admin_auth', '1');
-      onLogin();
-    } else {
-      setError('Incorrect password.');
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        sessionStorage.setItem('admin_auth', '1');
+        sessionStorage.setItem('admin_pwd', password);
+        onLogin(password);
+      } else {
+        setError(data.error || 'Incorrect password.');
+      }
+    } catch {
+      setError('Network error. Try again.');
     }
+    setLoading(false);
   }
 
   return (
@@ -125,9 +143,10 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
         {error && <p className="text-red-400 text-sm">{error}</p>}
         <button
           type="submit"
-          className="w-full bg-primary-600 hover:bg-primary-500 text-white font-bold py-2.5 rounded-lg transition-colors text-sm"
+          disabled={loading}
+          className="w-full bg-primary-600 hover:bg-primary-500 disabled:opacity-60 text-white font-bold py-2.5 rounded-lg transition-colors text-sm"
         >
-          Sign in
+          {loading ? 'Signing in…' : 'Sign in'}
         </button>
       </form>
     </div>
@@ -516,6 +535,128 @@ function FAQEditor({
   );
 }
 
+// ─── Settings Editor ──────────────────────────────────────────────────────────
+
+function SettingsEditor() {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [show, setShow] = useState({ current: false, new: false, confirm: false });
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  async function handleChangePassword(e: React.FormEvent) {
+    e.preventDefault();
+    setMessage(null);
+
+    if (newPassword !== confirmPassword) {
+      setMessage({ type: 'error', text: 'New passwords do not match' });
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setMessage({ type: 'error', text: 'Password must be at least 6 characters' });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const res = await fetch('/api/admin/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setMessage({ type: 'success', text: 'Password changed successfully!' });
+        // Update session password
+        sessionStorage.setItem('admin_pwd', newPassword);
+        sessionPassword = newPassword;
+        // Clear form
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+      } else {
+        setMessage({ type: 'error', text: data.error || 'Failed to change password' });
+      }
+    } catch {
+      setMessage({ type: 'error', text: 'Network error. Try again.' });
+    }
+    setSaving(false);
+  }
+
+  return (
+    <SectionCard title="Admin Settings">
+      <form onSubmit={handleChangePassword} className="space-y-4">
+        <Field label="Current Password">
+          <div className="relative">
+            <input
+              type={show.current ? 'text' : 'password'}
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm pr-10 focus:outline-none focus:border-primary-500"
+            />
+            <button
+              type="button"
+              onClick={() => setShow((s) => ({ ...s, current: !s.current }))}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+            >
+              {show.current ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+          </div>
+        </Field>
+        <Field label="New Password">
+          <div className="relative">
+            <input
+              type={show.new ? 'text' : 'password'}
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm pr-10 focus:outline-none focus:border-primary-500"
+            />
+            <button
+              type="button"
+              onClick={() => setShow((s) => ({ ...s, new: !s.new }))}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+            >
+              {show.new ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+          </div>
+        </Field>
+        <Field label="Confirm New Password">
+          <div className="relative">
+            <input
+              type={show.confirm ? 'text' : 'password'}
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm pr-10 focus:outline-none focus:border-primary-500"
+            />
+            <button
+              type="button"
+              onClick={() => setShow((s) => ({ ...s, confirm: !s.confirm }))}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+            >
+              {show.confirm ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+          </div>
+        </Field>
+        {message && (
+          <p className={`text-sm ${message.type === 'success' ? 'text-green-400' : 'text-red-400'}`}>
+            {message.text}
+          </p>
+        )}
+        <button
+          type="submit"
+          disabled={saving}
+          className="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-500 disabled:opacity-60 text-white font-bold text-sm px-6 py-2.5 rounded-lg transition-colors"
+        >
+          <Save size={14} />
+          {saving ? 'Changing…' : 'Change Password'}
+        </button>
+      </form>
+    </SectionCard>
+  );
+}
+
 // ─── Main Admin Page ──────────────────────────────────────────────────────────
 
 export default function AdminPage() {
@@ -524,19 +665,23 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
-  const [activeTab, setActiveTab] = useState<'hero' | 'problem' | 'books' | 'testimonials' | 'faq'>('hero');
+  const [activeTab, setActiveTab] = useState<'hero' | 'problem' | 'books' | 'testimonials' | 'faq' | 'settings'>('hero');
 
   // Check session on mount
   useEffect(() => {
     const stored = sessionStorage.getItem('admin_auth');
-    if (stored === '1') setAuthed(true);
+    const pwd = sessionStorage.getItem('admin_pwd');
+    if (stored === '1' && pwd) {
+      sessionPassword = pwd;
+      setAuthed(true);
+    }
     setLoading(false);
   }, []);
 
   // Fetch content once authed
   useEffect(() => {
-    if (!authed) return;
-    fetch('/api/admin/content', { headers: { 'x-admin-secret': ADMIN_SECRET } })
+    if (!authed || !sessionPassword) return;
+    fetch('/api/admin/content', { headers: { 'x-admin-secret': sessionPassword } })
       .then((r) => (r.ok ? r.json() : null))
       .then((data: SiteContent | null) => {
         if (data) setContent(data);
@@ -554,13 +699,14 @@ export default function AdminPage() {
     try {
       const res = await fetch('/api/admin/content', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-secret': ADMIN_SECRET },
+        headers: { 'Content-Type': 'application/json', 'x-admin-secret': sessionPassword },
         body: JSON.stringify(content),
       });
+      const data = await res.json();
       if (res.ok) {
         showToast('success', 'Changes saved successfully.');
       } else {
-        showToast('error', 'Failed to save. Try again.');
+        showToast('error', data.error || 'Failed to save. Try again.');
       }
     } catch {
       showToast('error', 'Network error. Try again.');
@@ -570,11 +716,18 @@ export default function AdminPage() {
 
   function handleLogout() {
     sessionStorage.removeItem('admin_auth');
+    sessionStorage.removeItem('admin_pwd');
+    sessionPassword = '';
     setAuthed(false);
   }
 
+  function handleLogin(pwd: string) {
+    sessionPassword = pwd;
+    setAuthed(true);
+  }
+
   if (loading) return null;
-  if (!authed) return <LoginScreen onLogin={() => setAuthed(true)} />;
+  if (!authed) return <LoginScreen onLogin={handleLogin} />;
 
   const tabs = [
     { key: 'hero', label: 'Hero' },
@@ -582,6 +735,7 @@ export default function AdminPage() {
     { key: 'books', label: 'Books' },
     { key: 'testimonials', label: 'Testimonials' },
     { key: 'faq', label: 'FAQ' },
+    { key: 'settings', label: 'Settings' },
   ] as const;
 
   return (
@@ -659,17 +813,20 @@ export default function AdminPage() {
           {activeTab === 'faq' && (
             <FAQEditor data={content.faq} onChange={(faq) => setContent({ ...content, faq })} />
           )}
+          {activeTab === 'settings' && <SettingsEditor />}
 
-          <div className="flex justify-end pb-8">
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-500 disabled:opacity-60 text-white font-bold text-sm px-6 py-3 rounded-xl transition-colors"
-            >
-              <Save size={15} />
-              {saving ? 'Saving…' : 'Save all changes'}
-            </button>
-          </div>
+          {activeTab !== 'settings' && (
+            <div className="flex justify-end pb-8">
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-500 disabled:opacity-60 text-white font-bold text-sm px-6 py-3 rounded-xl transition-colors"
+              >
+                <Save size={15} />
+                {saving ? 'Saving…' : 'Save all changes'}
+              </button>
+            </div>
+          )}
         </main>
 
         {/* Toast */}
